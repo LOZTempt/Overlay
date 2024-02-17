@@ -36,5 +36,3 @@ label.bind("<Button-2>", kill_switch) # Binds the kill switch function to the mi
 # Start the tkinter event loop.
 # The mainloop() method is a loop used to catch events. It won't return until the root widget is destroyed.
 root.mainloop()
-
-print("LIGMA BALLS")
