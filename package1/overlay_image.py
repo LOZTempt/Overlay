@@ -1,19 +1,20 @@
-import tkinter as tk
+from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtGui import QPainter, QBrush
+from PyQt5.QtCore import Qt
+import sys
 
-def kill_switch(event): 
-    root.quit()
+class CircleWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WA_TranslucentBackground, True)  # Make the window background transparent
+        self.setGeometry(300, 300, 200, 200)  # Set the size and position of the window
 
-root = tk.Tk()
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setBrush(QBrush(Qt.black))  # Set the color of the circle
+        painter.drawEllipse(50, 50, 100, 100)  # Draw a circle
 
-# Set the root widget to be fullscreen.
-root.attributes('-fullscreen', True)
-
-# Remove window decorations to make it borderless.
-root.overrideredirect(True)
-
-label = tk.Label(root, bg="black")  # Create a black Label widget to serve as the overlay.
-label.pack(fill=tk.BOTH, expand=True)  # Pack the label to fill the entire window.
-
-label.bind("<Button-2>", kill_switch)
-
-root.mainloop()
+app = QApplication(sys.argv)
+circle_widget = CircleWidget()
+circle_widget.show()
+sys.exit(app.exec_())
