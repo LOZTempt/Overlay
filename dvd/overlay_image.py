@@ -30,7 +30,7 @@ class GameOverlay(QWidget):
 
     def moveBox(self):
         # Move the box
-        self.box_position += box_speed*5
+        self.box_position += box_speed
 
         # If the box reaches the edge of the screen, reverse its direction
         if self.box_position.x() <= 0 or self.box_position.x() + box_size.width() >= self.width():
