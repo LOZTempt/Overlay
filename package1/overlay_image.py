@@ -1,5 +1,5 @@
 import sys
-from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QEasingCurve
+from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtWidgets import QApplication, QWidget
 
@@ -28,16 +28,39 @@ class GameOverlay(QWidget):
         self.animation_timer.timeout.connect(self.moveBox)
         self.animation_duration = 9000  # 9 seconds
         self.animation_timer.start(16)  # Update approximately every 16 milliseconds (about 60 FPS)
+        self.start_time = QTime.currentTime()
+        self.loop_timer = QTimer(self)
+        self.loop_timer.timeout.connect(self.resetBox)
+        self.loop_duration = 10000  # 10 seconds
+        self.loop_timer.start(self.loop_duration)
 
     def moveBox(self):
-        self.box_position.setY(self.box_position.y() + box_speed.y())
+        # Calculate the distance to move based on the elapsed time and the total duration
+        elapsed_time = self.start_time.msecsTo(QTime.currentTime())
+        progress = elapsed_time / self.animation_duration
 
-        # Check if the box has reached the bottom of the screen
-        if self.box_position.y() >= self.height():
-            # Reset the box's position to the center of the screen
-            self.box_position.setY((self.height() - self.box_size.height()) // 2)
+        # Calculate the new position based on the progress
+        new_y = int(progress * self.screen_height)
 
+        # Update the box position
+        self.box_position.setY(new_y)
+
+        # Repaint the widget to reflect the new position
         self.update()
+
+        # If the animation is complete, stop the timer
+        if progress >= 1:
+            self.animation_timer.stop()
+
+    def resetBox(self):
+        # Reset the box position to the top of the screen
+        self.box_position.setY(0)
+
+        # Reset the start time for the animation
+        self.start_time = QTime.currentTime()
+
+        # Restart the animation timer
+        self.animation_timer.start(16)
 
     def paintEvent(self, event):
         painter = QPainter(self)
