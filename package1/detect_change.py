@@ -36,6 +36,7 @@ class CharacterScanner:
                     break
 
                 # One screenshot per second
-                time.sleep(.1)
+                #time.sleep(.1)
 
+        time.sleep(.2)
         return character_found

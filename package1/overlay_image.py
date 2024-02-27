@@ -53,9 +53,6 @@ class GameOverlay(QWidget):
         # Store the current time as the start time of the animation
         self.start_time = QTime.currentTime()
 
-        #self.moveBox_thread = threading.Thread(target=self.moveBox)
-        #self.moveBox_thread.start()
-
         # Create a QTimer object for the loop
         self.loop_timer = QTimer(self)
         # Connect the timeout signal of the timer to the resetBox method
