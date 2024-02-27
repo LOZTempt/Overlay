@@ -1,6 +1,5 @@
 import sys
 import time
-import threading
 from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtWidgets import QApplication, QWidget
@@ -87,14 +86,14 @@ class GameOverlay(QWidget):
         character_found = scanner.scan_for_character()
 
         if character_found:
-            # Reset the y-coordinate of the box to the top of the screen
-            self.box_position.setY(0)
+             # Reset the y-coordinate of the box to the top of the screen
+             self.box_position.setY(0)
 
              # Restart the animation timer
-            self.animation_timer.start(16)
+             self.animation_timer.start(16)
 
-            # Reset the start time of the animation to the current time
-            self.start_time = QTime.currentTime()
+             # Reset the start time of the animation to the current time
+             self.start_time = QTime.currentTime()    
 
     # Define the method to paint the widget
     def paintEvent(self, event):

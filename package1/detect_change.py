@@ -3,6 +3,7 @@ import cv2
 import mss
 import numpy
 import pytesseract
+import multiprocessing
 
 class CharacterScanner:
     def __init__(self, mon):
@@ -38,5 +39,5 @@ class CharacterScanner:
                 # One screenshot per second
                 #time.sleep(.1)
 
-        time.sleep(.2)
+        time.sleep(.3)
         return character_found
