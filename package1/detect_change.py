@@ -9,6 +9,8 @@ class CharacterScanner:
     def __init__(self, mon):
         self.mon = mon
 
+        self.character_found = None
+
     def scan_for_character(self):
         # Create a screen capture object
         with mss.mss() as sct:

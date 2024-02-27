@@ -5,6 +5,14 @@ from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime, QPropertyAnimation, Q
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton
 from detect_change import CharacterScanner
+from input_window import InputWindow
+
+app = QApplication([])
+
+input_window = InputWindow()
+input_window.exec_()
+
+animation_duration = input_window.animation_duration * 1000 
 
 # Define the monitor region to capture
 mon = {'top': 0, 'left': 0, 'width': 150, 'height': 100}
@@ -50,8 +58,8 @@ class GameOverlay(QWidget):
         # Create a QPropertyAnimation instance
         self.animation = QPropertyAnimation(self.frame, b"geometry")
 
-        # Set the duration of the animation to 9000 ms (9 seconds)
-        self.animation.setDuration(9000)
+        # Set the duration of the animation to user specified input in ms
+        self.animation.setDuration(animation_duration)
         
         initial_geometry = self.frame.geometry()
         print(initial_geometry)
@@ -79,13 +87,22 @@ class GameOverlay(QWidget):
         
     # Define the method to reset the box
     def resetBox(self):
-        initial_geometry = QRect(0, 0, 3840, 1600)
-
-        self.animation.stop()
-        # Reset the y-coordinate of the box to the top of the screen
-        self.animation.setStartValue(initial_geometry)  
-        self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
-        self.animation.start()
+        loop_curtain = input_window.loop_curtain_effect
+        
+        if not loop_curtain:
+            character_found = scanner.scan_for_character()
+            if character_found:
+                self.animation.stop()                
+                initial_geometry = QRect(0, 0, 3840, 1600)
+                self.animation.setStartValue(initial_geometry)  
+                self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
+                self.animation.start()
+        else:
+            self.animation.stop()
+            initial_geometry = QRect(0, 0, 3840, 1600)
+            self.animation.setStartValue(initial_geometry)  
+            self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
+            self.animation.start()
 
 
     # Define the method to handle mouse press events
