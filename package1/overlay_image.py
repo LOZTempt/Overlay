@@ -1,10 +1,16 @@
 import sys
+import time
+import threading
 from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtWidgets import QApplication, QWidget
+from detect_change import CharacterScanner
 
 # Define the speed at which the box moves
 box_speed = QPoint(0, 1)
+# Define the monitor region to capture
+mon = {'top': 0, 'left': 0, 'width': 150, 'height': 100}
+scanner = CharacterScanner(mon)
 
 # Define a new class, GameOverlay, that inherits from QWidget
 class GameOverlay(QWidget):
@@ -47,6 +53,9 @@ class GameOverlay(QWidget):
         # Store the current time as the start time of the animation
         self.start_time = QTime.currentTime()
 
+        #self.moveBox_thread = threading.Thread(target=self.moveBox)
+        #self.moveBox_thread.start()
+
         # Create a QTimer object for the loop
         self.loop_timer = QTimer(self)
         # Connect the timeout signal of the timer to the resetBox method
@@ -78,14 +87,17 @@ class GameOverlay(QWidget):
 
     # Define the method to reset the box
     def resetBox(self):
-        # Reset the y-coordinate of the box to the top of the screen
-        self.box_position.setY(0)
+        character_found = scanner.scan_for_character()
 
-        # Reset the start time of the animation to the current time
-        self.start_time = QTime.currentTime()
+        if character_found:
+            # Reset the y-coordinate of the box to the top of the screen
+            self.box_position.setY(0)
 
-        # Restart the animation timer
-        self.animation_timer.start(16)
+             # Restart the animation timer
+            self.animation_timer.start(16)
+
+            # Reset the start time of the animation to the current time
+            self.start_time = QTime.currentTime()
 
     # Define the method to paint the widget
     def paintEvent(self, event):
