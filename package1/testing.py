@@ -39,7 +39,7 @@ class AnimatedWidget(QWidget):
 
         # Set the duration of the animation to 9000 ms (9 seconds)
         self.animation.setDuration(9000)
-        
+    
         initial_geometry = self.frame.geometry()
         # Set the start value of the animation to the initial geometry of the widget
         self.animation.setStartValue(initial_geometry)
