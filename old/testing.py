@@ -3,7 +3,6 @@ import time
 from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime, QPropertyAnimation, QRect
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton
-from detect_change import CharacterScanner
 
 class AnimatedWidget(QWidget):
     def __init__(self):

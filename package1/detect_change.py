@@ -25,7 +25,7 @@ class CharacterScanner:
 
                 # Check if the character '/' is in the text
                 if 'Opening..' in text:
-                    print("Character found!")
+                    #print("Character found!")
                     character_found = True
                 else:
                     character_found = False

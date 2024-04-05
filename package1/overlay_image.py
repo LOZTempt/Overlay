@@ -1,6 +1,4 @@
-import sys
-import time
-import threading
+import sys, time, threading, random
 from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime, QPropertyAnimation, QRect
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton
@@ -14,37 +12,29 @@ input_window.exec_()
 
 animation_duration = input_window.animation_duration * 1000 
 
-# Define the monitor region to capture
-mon = {'top': 0, 'left': 0, 'width': 150, 'height': 100}
+mon = {'top': 0, 'left': 0, 'width': 150, 'height': 50}
 scanner = CharacterScanner(mon)
 
-# Create a new thread to run the scan_for_character function
 scan_thread = threading.Thread(target=scanner.scan_for_character)
-# Start the new thread
 scan_thread.start()
 scan_thread.join()
 
-# Define a new class, GameOverlay, that inherits from QWidget
 class GameOverlay(QWidget):
     def __init__(self):
-        # Call the constructor of the parent class, QWidget
         super().__init__()
 
-        # Set the window flags to make the window frameless and always on top
+        self.poop = 0
+        self.loop_curtain_img = input_window.loop_curtain_new_image
+
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        # Set the window attribute to make the background translucent
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        # Get the primary screen of the application
         screen = QApplication.primaryScreen()
-        # Get the geometry of the screen (i.e., its resolution)
         screen_geometry = screen.geometry()
 
-        # Store the width and height of the screen
         self.screen_width = screen_geometry.width()
         self.screen_height = screen_geometry.height()
 
-        # Set the geometry of the window to cover the entire screen
         self.setGeometry(0, 0, self.screen_width, self.screen_height)
 
         self.layout = QVBoxLayout()
@@ -53,57 +43,79 @@ class GameOverlay(QWidget):
         self.frame = QFrame(self)
         self.frame.setStyleSheet('background-color: black;')
         self.frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
-        self.frame.resize(3840, 1600)
+        self.frame.resize(3840, 1560)
 
-        # Create a QPropertyAnimation instance
         self.animation = QPropertyAnimation(self.frame, b"geometry")
 
-        # Set the duration of the animation to user specified input in ms
-        self.animation.setDuration(animation_duration)
-        
+       
         initial_geometry = self.frame.geometry()
-        print(initial_geometry)
-        # Set the start value of the animation to the initial geometry of the widget
         self.animation.setStartValue(initial_geometry)
-
-        # Set the end value of the animation to the desired final geometry of the widget
+        
         self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
-        # Connect the finished signal of the animation to the resetBox method
         self.animation.finished.connect(self.resetBox)
-        # Start the animation
+        self.animation.setDuration(animation_duration)
         self.animation.start()
 
-       # Create a new thread to run the checkCharacter function
         self.check_thread = threading.Thread(target=self.checkCharacter)
-        # Start the new thread
         self.check_thread.start()
         
     def checkCharacter(self):
-        while True:
-            character_found = scanner.scan_for_character()
-            if character_found:
-                self.resetBox()
-            time.sleep(1)  # Check every second
-        
-    # Define the method to reset the box
+        if self.loop_curtain_img:
+            while True:
+                self.character_found = scanner.scan_for_character()
+                if self.character_found:
+                    # Moved code around to make the random only recalculate when it is a new image
+                    randomness = input_window.randomness 
+                    if randomness == 0: 
+                        self.animation.setDuration(animation_duration) 
+                    else:
+                        random_high = animation_duration+randomness*1000 
+                        random_low = animation_duration-randomness*1000
+                        if random_low < 1000: 
+                            random_low = 1000 
+                        random_duration = random.randint(random_low, random_high) 
+                        self.animation.setDuration(random_duration) 
+
+                    # self.animation.stop() # MAKE THIS CONDITIONAL FOR THE OTHER OPTIONS
+                    self.resetBox()
+                #time.sleep(1)  
+        # put code in checkcharacter 
     def resetBox(self):
         loop_curtain = input_window.loop_curtain_effect
+        # randomness = input_window.randomness 
+        # if randomness == 0: 
+        #     self.animation.setDuration(animation_duration) 
+        # else:
+        #     random_high = animation_duration+randomness*1000 
+        #     random_low = animation_duration-randomness*1000
+        #     if random_low < 1000: 
+        #         random_low = 1000 
+        #     random_duration = random.randint(random_low, random_high) 
+        #     self.animation.setDuration(random_duration) 
+
         
-        if not loop_curtain:
-            character_found = scanner.scan_for_character()
-            if character_found:
-                self.animation.stop()                
-                initial_geometry = QRect(0, 0, 3840, 1600)
-                self.animation.setStartValue(initial_geometry)  
-                self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
-                self.animation.start()
+        #print (loop_curtain, self.poop)
+        if (not loop_curtain) and self.poop == 0:
+            self.poop += 1
+            #print("if triggered")
+            
+
+        elif self.poop > 0:
+            #print("POOP!")
+            self.poop -= 1
+            self.animation.stop()
+            initial_geometry = QRect(0, 40, 3840, 1560)
+            self.animation.setStartValue(initial_geometry)
+            self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
+            self.animation.start()
+
         else:
             self.animation.stop()
             initial_geometry = QRect(0, 0, 3840, 1600)
             self.animation.setStartValue(initial_geometry)  
             self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
             self.animation.start()
-
+            #print("else triggered")
 
     # Define the method to handle mouse press events
     def mousePressEvent(self, event):
