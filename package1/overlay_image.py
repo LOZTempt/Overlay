@@ -1,8 +1,7 @@
-import sys, time, threading, random
-from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime, QPropertyAnimation, QRect
+import sys, pytesseract, time, cv2, mss, numpy, random
+from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, QTime, QPropertyAnimation, QRect, QThread, pyqtSignal
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton
-from detect_change import CharacterScanner
 from input_window import InputWindow
 
 app = QApplication([])
@@ -10,31 +9,25 @@ app = QApplication([])
 input_window = InputWindow()
 input_window.exec_()
 
-animation_duration = input_window.animation_duration * 1000 
-
-mon = {'top': 0, 'left': 0, 'width': 150, 'height': 50}
-scanner = CharacterScanner(mon)
-
-scan_thread = threading.Thread(target=scanner.scan_for_character)
-scan_thread.start()
-scan_thread.join()
-
-class GameOverlay(QWidget):
+class AnimatedWidget(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.poop = 0
-        self.loop_curtain_img = input_window.loop_curtain_new_image
-
+        # Set the window flags to make the window frameless and always on top
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # Set the window attribute to make the background translucent
         self.setAttribute(Qt.WA_TranslucentBackground)
 
+        # Get the primary screen of the application
         screen = QApplication.primaryScreen()
+        # Get the geometry of the screen (i.e., its resolution)
         screen_geometry = screen.geometry()
 
+        # Store the width and height of the screen
         self.screen_width = screen_geometry.width()
         self.screen_height = screen_geometry.height()
 
+        # Set the geometry of the window to cover the entire screen
         self.setGeometry(0, 0, self.screen_width, self.screen_height)
 
         self.layout = QVBoxLayout()
@@ -43,96 +36,107 @@ class GameOverlay(QWidget):
         self.frame = QFrame(self)
         self.frame.setStyleSheet('background-color: black;')
         self.frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
-        self.frame.resize(3840, 1560)
+        self.frame.resize(3840, 1600)
 
+        # Create a QPropertyAnimation instance
         self.animation = QPropertyAnimation(self.frame, b"geometry")
 
-       
-        initial_geometry = self.frame.geometry()
-        self.animation.setStartValue(initial_geometry)
-        
-        self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
-        self.animation.finished.connect(self.resetBox)
-        self.animation.setDuration(animation_duration)
+        # Set the animation duration variable equal to the value input by the user
+        self.animation_duration = input_window.animation_duration * 1000
+        # Set the duration of the animation to 9000 ms (9 seconds)
+        self.animation.setDuration(self.animation_duration)
+    
+        self.initial_geometry = self.frame.geometry()
+        # if loop curtain effect is on then connect the animation end signal to restart the animation
+        if input_window.loop_curtain_effect == True:
+           self.animation.finished.connect(self.startAnim) 
+
+    def startAnim(self):
+        if input_window.loop_curtain_new_image == True:
+            self.animation.stop()
+        # Set the start value of the animation to the initial geometry of the widget
+        self.animation.setStartValue(self.initial_geometry)
+
+        # Set the end value of the animation to the desired final geometry of the widget
+        self.animation.setEndValue(QRect(-self.initial_geometry.x(), self.initial_geometry.height(), self.initial_geometry.width(), self.initial_geometry.height()))
+        # Start the animation
         self.animation.start()
 
-        self.check_thread = threading.Thread(target=self.checkCharacter)
-        self.check_thread.start()
-        
-    def checkCharacter(self):
-        if self.loop_curtain_img:
-            while True:
-                self.character_found = scanner.scan_for_character()
-                if self.character_found:
-                    # Moved code around to make the random only recalculate when it is a new image
-                    randomness = input_window.randomness 
-                    if randomness == 0: 
-                        self.animation.setDuration(animation_duration) 
-                    else:
-                        random_high = animation_duration+randomness*1000 
-                        random_low = animation_duration-randomness*1000
-                        if random_low < 1000: 
-                            random_low = 1000 
-                        random_duration = random.randint(random_low, random_high) 
-                        self.animation.setDuration(random_duration) 
+    def charScanner(self):
+        mon = {'top': 0, 'left': 0, 'width': 150, 'height': 50}
+        self.character_found = None
 
-                    # self.animation.stop() # MAKE THIS CONDITIONAL FOR THE OTHER OPTIONS
-                    self.resetBox()
-                #time.sleep(1)  
-        # put code in checkcharacter 
-    def resetBox(self):
-        loop_curtain = input_window.loop_curtain_effect
-        # randomness = input_window.randomness 
-        # if randomness == 0: 
-        #     self.animation.setDuration(animation_duration) 
-        # else:
-        #     random_high = animation_duration+randomness*1000 
-        #     random_low = animation_duration-randomness*1000
-        #     if random_low < 1000: 
-        #         random_low = 1000 
-        #     random_duration = random.randint(random_low, random_high) 
-        #     self.animation.setDuration(random_duration) 
+        # Create a screen capture object
+        with mss.mss() as sct:
+            # Initialize the variable
+            character_found = False
+            while not character_found and scanner_thread.scanning:  # Check if scanning flag is True
+                # Capture the defined region of the screen
+                im = numpy.asarray(sct.grab(mon))
 
-        
-        #print (loop_curtain, self.poop)
-        if (not loop_curtain) and self.poop == 0:
-            self.poop += 1
-            #print("if triggered")
-            
+                # Use pytesseract to convert the image to text
+                text = pytesseract.image_to_string(im)
 
-        elif self.poop > 0:
-            #print("POOP!")
-            self.poop -= 1
-            self.animation.stop()
-            initial_geometry = QRect(0, 40, 3840, 1560)
-            self.animation.setStartValue(initial_geometry)
-            self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
-            self.animation.start()
+                # Check if the character '/' is in the text
+                if 'Opening..' in text:
+                    character_found = True
+                    if input_window.randomness > 0: # if randomness is greater than 0
+                        # Determines the random value based off the user input
+                        self.animation_duration = self.randDur(input_window.randomness)
+                        # Applies the random value to the animation
+                        self.animation.setDuration(self.animation_duration)
+                    print(self.animation_duration)
+                else:
+                    character_found = False
 
-        else:
-            self.animation.stop()
-            initial_geometry = QRect(0, 0, 3840, 1600)
-            self.animation.setStartValue(initial_geometry)  
-            self.animation.setEndValue(QRect(-initial_geometry.x(), initial_geometry.height(), initial_geometry.width(), initial_geometry.height()))
-            self.animation.start()
-            #print("else triggered")
+                # Display the captured image in a window
+                cv2.imshow('Image', im)
 
-    # Define the method to handle mouse press events
-    def mousePressEvent(self, event):
-        # If the middle mouse button is pressed, close the window
-        if event.button() == Qt.MiddleButton:
-            self.close()
+                # If the "q" key is pressed, break the loop and close the window
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    cv2.destroyAllWindows()
+                    break
+        time.sleep(.3)
+        return character_found
+    
+    def randDur(self, randomness):
+        random_high = self.animation_duration+randomness*1000 
+        random_low = self.animation_duration-randomness*1000
+        if random_low < 1000:                 
+            random_low = 1000 
+        random_duration = random.randint(random_low, random_high) 
+        return random_duration
 
-# Define the main function
-def main():
-    app = QApplication(sys.argv)
-    # Create a GameOverlay object
-    overlay = GameOverlay()    
-    overlay.show()
-    # Enter the main event loop of the application
-    sys.exit(app.exec_())
+class ScannerThread(QThread):
+    signal = pyqtSignal()
 
-# If this script is run directly (not imported as a module), call the main function
-if __name__ == '__main__':
-    main()
+    def __init__(self):
+        super().__init__()
+        self.scanning = True  # Flag to control the scanning loop
 
+    def run(self):
+        # Loop indefinitely
+        while self.scanning:
+            # Call the charScanner function to check for the target text
+            if window.charScanner():
+                # If the target text is found, emit the signal
+                self.signal.emit()
+                
+            else:
+                # If the target text is not found, continue listening
+                print("Target text not found. Listening...")
+                # Add a delay to prevent high CPU usage
+                time.sleep(1)
+
+window = AnimatedWidget()
+window.startAnim()
+window.show()
+
+# Create a thread for the character scanning loop
+scanner_thread = ScannerThread()
+# Connect the signal from the thread to the startAnim method of the AnimatedWidget
+scanner_thread.signal.connect(window.startAnim)
+# Start the thread
+scanner_thread.start()
+
+app.exec_()
