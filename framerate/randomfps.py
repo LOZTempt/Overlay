@@ -60,7 +60,7 @@ def process_videos(input_dirs, output_dir):
 
 
 # Specify input and output directories
-input_directory = ['D:\\Test\\1_1folders\\PMV-SS', 'D:\\Test\\1_1folders\\PMV']
+input_directory = ['D:\\Test\\1_1folders']
 output_directory = 'D:\\Test\\1_1folders\\fpsOutput'
 
 # Call the function to process videos
