@@ -71,7 +71,7 @@ class InputWindow(QDialog):
     def submit(self):
         try:
             duration_value = int(self.lineEdit_duration.text())
-            delay_value = int(self.lineEdit_delay.text())
+            delay_value = float(self.lineEdit_delay.text())
             randomness_value = int(self.lineEdit_randomness.text())
             if 1 <= duration_value <= 100 and 0 <= delay_value <= 100 and 0 <= randomness_value <= 100:
                 self.animation_duration = duration_value
