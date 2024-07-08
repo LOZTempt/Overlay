@@ -23,9 +23,6 @@ class InputWindow(QDialog):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         grid_layout = QGridLayout()
-        grid_layout.setColumnStretch(0, 1)  # Label column
-        grid_layout.setColumnStretch(1, 2)  # Input column
-        grid_layout.setVerticalSpacing(20)  # Add vertical spacing between rows
 
         # Create input fields and labels
         self.duration_input = QLineEdit()
@@ -61,7 +58,6 @@ class InputWindow(QDialog):
             row_widget = QWidget()
             row_widget.setObjectName("evenRow" if i % 2 == 0 else "oddRow")
             row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(10, 10, 10, 10)  # Add padding
             
             label_widget = QLabel(label)
             label_widget.setObjectName("boldRedLabel")
@@ -72,20 +68,16 @@ class InputWindow(QDialog):
             elif i == 6:  # Delay Behaviour radio buttons
                 delay_behaviour_layout = QHBoxLayout()
                 self.delay_behaviour_group = QButtonGroup(self)
-                default_behaviour = "Black"  # Set "Black" as the default selected behaviour
                 for behaviour in ["Black", "Transparent", "Hold last position"]:
                     radio = QRadioButton(behaviour)
                     delay_behaviour_layout.addWidget(radio)
                     self.delay_behaviour_group.addButton(radio)
-                    if behaviour == default_behaviour:
-                        radio.setChecked(True)  # Set "Black" radio button as default selected
                 row_layout.addLayout(delay_behaviour_layout)
             
             grid_layout.addWidget(row_widget, i, 0, 1, 2)
 
         self.submit_button = QPushButton("Submit")
         self.submit_button.clicked.connect(self.submit)
-        self.submit_button.setFixedHeight(60)  # Set a fixed height for the submit button
 
         self.error_label = QLabel()
         self.error_label.setAlignment(Qt.AlignCenter)
@@ -93,7 +85,6 @@ class InputWindow(QDialog):
         self.error_label.setObjectName("errorLabel")
 
         layout.addLayout(grid_layout)
-        layout.addSpacing(20)  # Add space before the submit button
         layout.addWidget(self.submit_button)
         layout.addWidget(self.error_label)
 
@@ -167,16 +158,6 @@ class InputWindow(QDialog):
             }
         """)
 
-        self.setStyleSheet(self.styleSheet() + """
-            QLineEdit, QCheckBox {
-                min-width: 200px;
-            }
-            QWidget#evenRow, QWidget#oddRow {
-                border-radius: 5px;
-                padding: 10px;
-            }
-        """)
-        
     def submit(self):
         try:
             duration = int(self.duration_input.text())

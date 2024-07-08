@@ -1,5 +1,5 @@
 import sys, pytesseract, time, cv2, mss, numpy, random
-from PyQt5.QtCore import Qt, QMutex, QPropertyAnimation, QRect, QThread, pyqtSignal, QWaitCondition
+from PyQt5.QtCore import Qt, QMutex, QPropertyAnimation, QRect, QThread, pyqtSignal, QWaitCondition, QAbstractAnimation
 from PyQt5.QtGui import QPainter, QBrush, QColor, QRegion
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton
 from input_window import InputWindow
@@ -11,10 +11,6 @@ from enum import Enum
 # Make an option for the delay so that it will retain black during delay (is currently how it works)
 # Change default behavior so that the black resets when the delay initiates
 # Make option for a: delay but show black during delay b: delay but don't display black during c: keep current functionality, display the black from the prior. I think I mean hold the old position when a new image comes up for the delay length
-
-# New stuff TODO as of July:
-# Make it so the "curtain" doesn't start moving until the image is actually loaded
-# Idea is when opening is detected, just cover the screen (Except top left) completely in black, then when the text is detected when an image is open then start the 
 
 app = QApplication([])
 
@@ -29,10 +25,15 @@ class ScannerState(Enum):
 class AnimatedWidget(QWidget):
     def __init__(self):
         super().__init__()
-
+        # Defining variables for use later
         self.current_state = ScannerState.IDLE
-        self.delay = int(input_window.delay * 1000)
+        self.delay = int(input_window.delay)
+        self.delay_range = int(input_window.random_delay_range)
         self.black_toggled = False
+        self._is_paused = False
+        self._pause_value = None
+        self._pause_time = None
+
         # Set the window flags to make the window frameless and always on top
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         # Set the window attribute to make the background translucent
@@ -70,6 +71,8 @@ class AnimatedWidget(QWidget):
 
         # Create a QPropertyAnimation instance
         self.animation = QPropertyAnimation(self.frame, b"geometry")
+        
+        self._pause_value = self.animation.currentValue()
 
         # Set the animation duration variable equal to the value input by the user
         self.animation_duration = input_window.animation_duration * 1000
@@ -89,7 +92,13 @@ class AnimatedWidget(QWidget):
         if input_window.loop_curtain_new_image == True:
             self.animation.stop()
             
-        # if self.delay > 0:
+        if self.delay > 0:
+            if self.delay_range > 0:
+                sleep_time = self.randDur(self.delay_range, self.delay)/1000
+                print (sleep_time)
+                time.sleep(sleep_time)
+            else:
+                time.sleep(self.delay)
 
         # Set the start value of the animation to the initial geometry of the widget
         self.animation.setStartValue(self.initial_geometry)
@@ -119,7 +128,7 @@ class AnimatedWidget(QWidget):
                     character_found = 2
                     if input_window.randomness > 0: # if randomness is greater than 0
                         # Determines the random value based off the user input
-                        self.animation_duration = self.randDur(input_window.randomness)
+                        self.animation_duration = self.randDur(input_window.randomness, input_window.animation_duration)
                         # Applies the random value to the animation
                         self.animation.setDuration(self.animation_duration)
                     print(self.animation_duration)
@@ -135,17 +144,11 @@ class AnimatedWidget(QWidget):
                 if cv2.waitKey(25) & 0xFF == ord('q'):
                     cv2.destroyAllWindows()
                     break
-        
-        
-        # if character_found == 1:
-        #     time.sleep(2)
-        # print(character_found)
         return character_found
     
-    def randDur(self, randomness):
-        print(input_window.animation_duration)
-        random_high = input_window.animation_duration*1000+randomness*1000 
-        random_low = input_window.animation_duration*1000-randomness*1000
+    def randDur(self, randomness, orig_bounds):
+        random_high = orig_bounds*1000+randomness*1000 
+        random_low = orig_bounds*1000-randomness*1000
         if random_low < 1000:                 
             random_low = 1000 
         random_duration = random.randint(random_low, random_high) 
@@ -168,7 +171,21 @@ class AnimatedWidget(QWidget):
         elif new_state == ScannerState.IDLE:
             # Handle transition to idle state if needed
             pass
-        
+    # Added pause and resume functions for the animation, to be used later. Hopefully they work...
+    def pause(self):
+        # This is the only line im not sure if it will work
+        if self.animation.state() == QtCore.QAbstractAnimation.Running:
+            self._is_paused = True
+            self._pause_value = self.animation.currentValue()
+            self._pause_time = self.animation.currentTime()
+            self.animation.stop()
+
+    def resume(self):
+        if self._is_paused:
+            self.animation.setStartValue(self._pause_value)
+            self.animation.setCurrentTime(self._pause_time)
+            self.animation.start()
+            self._is_paused = False
 
 class ScannerThread(QThread):
     signal_new = pyqtSignal()
@@ -202,38 +219,14 @@ class ScannerThread(QThread):
 
             time.sleep(0.1)  # Short sleep to prevent high CPU usage
 
-            # # If 1 is returned, it means a new image is being loaded. So block the screen.
-            # if scan_result == 1:
-            #     # If the target text is found, emit the signal
-            #     self.signal_new.emit()
-
-            #     time.sleep(2)
-
-            # # If 2 is returned, it means a new image has just been opened. So restart the animation.
-            # elif scan_result == 2:
-            #     # If the target text is found, emit the signal
-            #     self.signal_open.emit()
-
-            #     time.sleep(1.1)
-            # # If neither are returned then wait before trying again.
-            # else:
-            #     # If the target text is not found, continue listening
-            #     print("Target text not found. Listening...")
-            #     # Add a delay to prevent high CPU usage
-            #     time.sleep(1)
-
 window = AnimatedWidget()
 window.startAnim()
 window.show()
 
 # Create a thread for the character scanning loop
 scanner_thread = ScannerThread()
-
+# Connect the signal to the handle_state_change function in the window class
 scanner_thread.signal_state_changed.connect(window.handle_state_change)
-# # Connect the signal from the thread to the startAnim method of the AnimatedWidget
-# scanner_thread.signal_open.connect(window.toggleBlack)
-# # Connect the signal from the thread to the startAnim method of the AnimatedWidget
-# scanner_thread.signal_new.connect(window.startAnim)
 # Start the thread
 scanner_thread.start()
 
