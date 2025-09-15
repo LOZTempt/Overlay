@@ -1,210 +1,233 @@
-from PyQt5.QtWidgets import (QDialog, QLineEdit, QPushButton, QApplication, 
-                             QLabel, QVBoxLayout, QCheckBox, QWidget, QButtonGroup, QRadioButton, QHBoxLayout, QGridLayout)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+import sys, pytesseract, time, cv2, mss, numpy, random
+from PyQt5.QtCore import Qt, QMutex, QPropertyAnimation, QRect, QThread, pyqtSignal, QWaitCondition, QAbstractAnimation
+from PyQt5.QtGui import QPainter, QBrush, QColor, QRegion
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton
+from input_window import InputWindow
+from enum import Enum
 
-class InputWindow(QDialog):
+
+#TODO
+# Make an option so it is just the delay then after that the box moves into place but doesn't move (have to offset it though)
+# Make an option for the delay so that it will retain black during delay (is currently how it works)
+# Change default behavior so that the black resets when the delay initiates
+# Make option for a: delay but show black during delay b: delay but don't display black during c: keep current functionality, display the black from the prior. I think I mean hold the old position when a new image comes up for the delay length
+
+app = QApplication([])
+
+input_window = InputWindow()
+input_window.exec_()
+
+class ScannerState(Enum):
+    IDLE = 0
+    OPENING = 1
+    IMAGE_LOADED = 2
+
+class AnimatedWidget(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Animation Settings")
-        self.resize(800, 600)
-        self.setup_ui()
-        self.setup_style()
+        # Defining variables for use later
+        self.current_state = ScannerState.IDLE
+        self.delay = int(input_window.delay)
+        self.delay_range = int(input_window.random_delay_range)
+        self.black_toggled = False
+        self._is_paused = False
+        self._pause_value = None
+        self._pause_time = None
+
+        # Set the window flags to make the window frameless and always on top
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # Set the window attribute to make the background translucent
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+        # Get the primary screen of the application
+        screen = QApplication.primaryScreen()
+        # Get the geometry of the screen (i.e., its resolution)
+        screen_geometry = screen.geometry()
+
+        # Store the width and height of the screen
+        self.screen_width = screen_geometry.width()
+        self.screen_height = screen_geometry.height()
+
+        # Set the geometry of the window to cover the entire screen
+        self.setGeometry(0, 0, self.screen_width, self.screen_height)
+
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+
+        self.frame = QFrame(self)
+        self.frame.setStyleSheet('background-color: black;')
+        self.frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        self.frame.resize(3840, 1600)
+
+        # Frame to cover the entire screen except for the left 150 pixels
+        self.full_black_main = QFrame(self)
+        self.full_black_main.setGeometry(150, 0, self.screen_width - 150, self.screen_height)
+        self.full_black_main.setStyleSheet('background-color: black;')
+
+        # Frame to cover the top 50 pixels of the left 150 pixels
+        self.full_black_cutout = QFrame(self)
+        self.full_black_cutout.setGeometry(0, 50, 150, self.screen_height - 50)
+        self.full_black_cutout.setStyleSheet('background-color: black;')
+
+        # Create a QPropertyAnimation instance
+        self.animation = QPropertyAnimation(self.frame, b"geometry")
         
-        # Initialize attributes with default values
-        self.animation_duration = None
-        self.delay = None
-        self.randomness = None
-        self.loop_curtain_effect = None
-        self.loop_curtain_new_image = None
-        self.delay_behaviour = None
-        self.random_delay_range = None
+        self._pause_value = self.animation.currentValue()
 
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        grid_layout = QGridLayout()
+        # Set the animation duration variable equal to the value input by the user
+        self.animation_duration = input_window.animation_duration * 1000
+        # Set the duration of the animation to 9000 ms (9 seconds)
+        self.animation.setDuration(self.animation_duration)
+    
+        self.initial_geometry = self.frame.geometry()
+        # if loop curtain effect is on then connect the animation end signal to restart the animation
+        if input_window.loop_curtain_effect == True:
+           self.animation.finished.connect(self.startAnim) 
+        # Initialize mutex and wait condition
 
-        # Create input fields and labels
-        self.duration_input = QLineEdit()
-        self.delay_input = QLineEdit("0")
-        self.randomness_input = QLineEdit("0")
-        self.random_delay_range_input = QLineEdit("0")
-        self.loop_checkbox = QCheckBox("Enable")
-        self.new_image_checkbox = QCheckBox("Enable")
-        self.new_image_checkbox.setChecked(True)
+    def startAnim(self):
+        if self.black_toggled:
+            self.toggleBlack()
 
-        # Add widgets to grid layout with alternating row colors
-        labels = [
-            "Animation Duration (1-100)",
-            "Delay (0-100)",
-            "Randomness (0-100)",
-            "Random Delay Range (0-100)",
-            "Loop curtain effect",
-            "Loop curtain on new image",
-            "Delay Behaviour"
-        ]
-
-        inputs = [
-            self.duration_input,
-            self.delay_input,
-            self.randomness_input,
-            self.random_delay_range_input,
-            self.loop_checkbox,
-            self.new_image_checkbox,
-            None  # Placeholder for radio buttons
-        ]
-
-        for i, (label, input_widget) in enumerate(zip(labels, inputs)):
-            row_widget = QWidget()
-            row_widget.setObjectName("evenRow" if i % 2 == 0 else "oddRow")
-            row_layout = QHBoxLayout(row_widget)
+        if input_window.loop_curtain_new_image == True:
+            self.animation.stop()
             
-            label_widget = QLabel(label)
-            label_widget.setObjectName("boldRedLabel")
-            row_layout.addWidget(label_widget)
-            
-            if input_widget:
-                row_layout.addWidget(input_widget)
-            elif i == 6:  # Delay Behaviour radio buttons
-                delay_behaviour_layout = QHBoxLayout()
-                self.delay_behaviour_group = QButtonGroup(self)
-                for behaviour in ["Black", "Transparent", "Hold last position"]:
-                    radio = QRadioButton(behaviour)
-                    delay_behaviour_layout.addWidget(radio)
-                    self.delay_behaviour_group.addButton(radio)
-                row_layout.addLayout(delay_behaviour_layout)
-            
-            grid_layout.addWidget(row_widget, i, 0, 1, 2)
-
-        self.submit_button = QPushButton("Submit")
-        self.submit_button.clicked.connect(self.submit)
-
-        self.error_label = QLabel()
-        self.error_label.setAlignment(Qt.AlignCenter)
-        self.error_label.setWordWrap(True)
-        self.error_label.setObjectName("errorLabel")
-
-        layout.addLayout(grid_layout)
-        layout.addWidget(self.submit_button)
-        layout.addWidget(self.error_label)
-
-    def setup_style(self):
-        font = QFont()
-        font.setPointSize(14)
-        self.setFont(font)
-
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-                color: #ffffff;
-                font-size: 14pt;
-            }
-            QLineEdit, QCheckBox, QRadioButton {
-                background-color: #3b3b3b;
-                border: 1px solid #555555;
-                padding: 10px;
-                border-radius: 5px;
-                min-height: 30px;
-            }
-            QPushButton {
-                background-color: #0d47a1;
-                border: none;
-                padding: 15px 30px;
-                border-radius: 8px;
-                font-size: 16pt;
-            }
-            QPushButton:hover {
-                background-color: #1565c0;
-            }
-            QLabel#errorLabel {
-                color: #ff5252;
-                font-weight: bold;
-                font-size: 16pt;
-                background-color: #461818;
-                padding: 10px;
-                border-radius: 5px;
-            }
-            QLabel#boldRedLabel {
-                color: #ff5252;
-                font-weight: bold;
-            }
-            QCheckBox::indicator {
-                width: 25px;
-                height: 25px;
-                background-color: #3b3b3b;
-                border: 2px solid #555555;
-                border-radius: 5px;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #0d47a1;
-                border: 2px solid #0d47a1;
-            }
-            QRadioButton::indicator {
-                width: 25px;
-                height: 25px;
-                background-color: #3b3b3b;
-                border: 2px solid #555555;
-                border-radius: 12px;
-            }
-            QRadioButton::indicator:checked {
-                background-color: #0d47a1;
-                border: 2px solid #0d47a1;
-            }
-            QWidget#evenRow {
-                background-color: #2b2b2b;
-            }
-            QWidget#oddRow {
-                background-color: #363636;
-            }
-        """)
-
-    def submit(self):
-        try:
-            duration = int(self.duration_input.text())
-            delay = float(self.delay_input.text())
-            randomness = int(self.randomness_input.text())
-            random_delay_range = int(self.random_delay_range_input.text())
-            
-            if (1 <= duration <= 100 and 0 <= delay <= 100 and 
-                0 <= randomness <= 100 and 0 <= random_delay_range <= 100):
-                self.animation_duration = duration
-                self.delay = delay
-                self.randomness = randomness
-                self.loop_curtain_effect = self.loop_checkbox.isChecked()
-                self.loop_curtain_new_image = self.new_image_checkbox.isChecked()
-                self.delay_behaviour = self.delay_behaviour_group.checkedButton().text() if self.delay_behaviour_group.checkedButton() else None
-                self.random_delay_range = random_delay_range
-                self.accept()
+        if self.delay > 0:
+            if self.delay_range > 0:
+                sleep_time = self.randDur(self.delay_range, self.delay)/1000
+                print (sleep_time)
+                time.sleep(sleep_time)
             else:
-                self.error_label.setText("Please enter valid numbers within the specified ranges.")
-        except ValueError:
-            self.error_label.setText("Please enter valid numbers for all numeric fields.")
+                time.sleep(self.delay)
 
-def main():
-    app = QApplication([])
-    
-    input_window = InputWindow()
-    result = input_window.exec_()
-    
-    if result == QDialog.Accepted:
-        return (input_window.animation_duration, input_window.delay, input_window.randomness,
-                input_window.loop_curtain_effect, input_window.loop_curtain_new_image, 
-                input_window.delay_behaviour, input_window.random_delay_range)
-    else:
-        print("User closed the window without submitting.")
-        return None
+        # Set the start value of the animation to the initial geometry of the widget
+        self.animation.setStartValue(self.initial_geometry)
 
-if __name__ == '__main__':
-    result = main()
-    if result:
-        (animation_duration, delay, randomness, loop_curtain_effect, 
-         loop_curtain_new_image, delay_behaviour, random_delay_range) = result
-        print(f"Animation duration: {animation_duration}")
-        print(f"Delay: {delay}")
-        print(f"Randomness: {randomness}")
-        print(f"Loop curtain effect: {loop_curtain_effect}")
-        print(f"Loop curtain on new image: {loop_curtain_new_image}")
-        print(f"Delay Behaviour: {delay_behaviour}")
-        print(f"Random Delay Range: {random_delay_range}")
-    else:
-        print("No data received from the input window.")
+        # Set the end value of the animation to the desired final geometry of the widget
+        self.animation.setEndValue(QRect(-self.initial_geometry.x(), self.initial_geometry.height(), self.initial_geometry.width(), self.initial_geometry.height()))
+        # Start the animation
+        self.animation.start()
+
+    def charScanner(self):
+        mon = {'top': 0, 'left': 0, 'width': 150, 'height': 50}
+        self.character_found = None
+
+        # Create a screen capture object
+        with mss.mss() as sct:
+            # Initialize the variable
+            character_found = 0
+            while character_found == 0 and scanner_thread.scanning:  # Check if scanning flag is True
+                # Capture the defined region of the screen
+                im = numpy.asarray(sct.grab(mon))
+
+                # Use pytesseract to convert the image to text
+                text = pytesseract.image_to_string(im)
+
+                # Check if the character '/' is in the text
+                if 'Opening..' in text:
+                    character_found = 2
+                    if input_window.randomness > 0: # if randomness is greater than 0
+                        # Determines the random value based off the user input
+                        self.animation_duration = self.randDur(input_window.randomness, input_window.animation_duration)
+                        # Applies the random value to the animation
+                        self.animation.setDuration(self.animation_duration)
+                    print(self.animation_duration)
+                elif '[' and ']' in text:
+                    character_found = 1
+                else:
+                    character_found = 0
+
+                # Display the captured image in a window
+                cv2.imshow('Image', im)
+
+                # If the "q" key is pressed, break the loop and close the window
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    cv2.destroyAllWindows()
+                    break
+        return character_found
+    
+    def randDur(self, randomness, orig_bounds):
+        random_high = orig_bounds*1000+randomness*1000 
+        random_low = orig_bounds*1000-randomness*1000
+        if random_low < 1000:                 
+            random_low = 1000 
+        random_duration = random.randint(random_low, random_high) 
+        return random_duration
+
+    def toggleBlack(self):
+        if self.black_toggled:
+            self.full_black_main.hide()
+            self.full_black_cutout.hide()
+        else:
+            self.full_black_main.show()
+            self.full_black_cutout.show()
+        self.black_toggled = not self.black_toggled
+
+    def handle_state_change(self, new_state):
+        if new_state == ScannerState.OPENING:
+            self.toggleBlack()
+        elif new_state == ScannerState.IMAGE_LOADED:
+            self.startAnim()
+        elif new_state == ScannerState.IDLE:
+            # Handle transition to idle state if needed
+            pass
+    # Added pause and resume functions for the animation, to be used later. Hopefully they work...
+    def pause(self):
+        # This is the only line im not sure if it will work
+        if self.animation.state() == QtCore.QAbstractAnimation.Running:
+            self._is_paused = True
+            self._pause_value = self.animation.currentValue()
+            self._pause_time = self.animation.currentTime()
+            self.animation.stop()
+
+    def resume(self):
+        if self._is_paused:
+            self.animation.setStartValue(self._pause_value)
+            self.animation.setCurrentTime(self._pause_time)
+            self.animation.start()
+            self._is_paused = False
+
+class ScannerThread(QThread):
+    signal_new = pyqtSignal()
+    signal_open = pyqtSignal()
+    signal_state_changed = pyqtSignal(ScannerState)
+
+    def __init__(self):
+        super().__init__()
+        self.scanning = True  # Flag to control the scanning loop
+        self.current_state = ScannerState.IDLE
+        self.state_change_time = 0
+
+    def run(self):
+        # Loop indefinitely
+        while self.scanning:
+            # Call the charScanner function to check for the target text
+            scan_result = window.charScanner()
+            new_state = None
+
+            if scan_result == 2 and self.current_state != ScannerState.OPENING:
+                new_state = ScannerState.OPENING
+            elif scan_result == 1 and self.current_state != ScannerState.IMAGE_LOADED:
+                new_state = ScannerState.IMAGE_LOADED
+            elif scan_result == 0 and self.current_state != ScannerState.IDLE:
+                new_state = ScannerState.IDLE
+
+            if new_state is not None:
+                self.current_state = new_state
+                self.state_change_time = time.time()
+                self.signal_state_changed.emit(new_state)
+
+            time.sleep(0.1)  # Short sleep to prevent high CPU usage
+
+window = AnimatedWidget()
+window.startAnim()
+window.show()
+
+# Create a thread for the character scanning loop
+scanner_thread = ScannerThread()
+# Connect the signal to the handle_state_change function in the window class
+scanner_thread.signal_state_changed.connect(window.handle_state_change)
+# Start the thread
+scanner_thread.start()
+
+app.exec_()
