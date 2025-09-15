@@ -94,6 +94,27 @@ class AnimatedWidget(QWidget):
         # if loop curtain effect is on then connect the animation end signal to restart the animation
         if input_window.loop_curtain_effect == True:
            self.animation.finished.connect(self.onAnimationFinished)
+           
+        # Add keyboard shortcuts for testing (optional)
+        self.setup_keyboard_shortcuts()
+
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts for testing and debugging"""
+        try:
+            from PyQt5.QtWidgets import QShortcut
+            from PyQt5.QtGui import QKeySequence
+            
+            # Add shortcut for manual animation test (Ctrl+T)
+            test_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
+            test_shortcut.activated.connect(self.test_animation)
+            
+            # Add shortcut for reset (Ctrl+R) 
+            reset_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+            reset_shortcut.activated.connect(self.reset_to_initial_position)
+            
+            print("Keyboard shortcuts enabled: Ctrl+T (test), Ctrl+R (reset)")
+        except Exception as e:
+            print(f"Could not setup keyboard shortcuts: {e}")
 
     def validate_configuration(self):
         """Validate the input window configuration and set defaults if needed"""
@@ -400,6 +421,23 @@ class AnimatedWidget(QWidget):
         self._animation_in_progress = False
         self._should_reset_timer = True
         print("Curtain reset to initial position")
+        
+    def cleanup(self):
+        """Clean up resources and stop all animations"""
+        try:
+            self.animation.stop()
+            # Hide all frames
+            self.frame.hide()
+            self.full_black_main.hide()
+            self.full_black_cutout.hide()
+            print("Cleanup completed")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+            
+    def closeEvent(self, event):
+        """Handle window close event"""
+        self.cleanup()
+        super().closeEvent(event)
 
 class ScannerThread(QThread):
     signal_new = pyqtSignal()
@@ -413,25 +451,48 @@ class ScannerThread(QThread):
         self.state_change_time = 0
 
     def run(self):
+        """Main scanning loop with optimized performance"""
         # Loop indefinitely
+        consecutive_errors = 0
+        max_errors = 5
+        
         while self.scanning:
-            # Call the charScanner function to check for the target text
-            scan_result = window.charScanner()
-            new_state = None
+            try:
+                # Call the charScanner function to check for the target text
+                scan_result = window.charScanner()
+                new_state = None
 
-            if scan_result == 2 and self.current_state != ScannerState.OPENING:
-                new_state = ScannerState.OPENING
-            elif scan_result == 1 and self.current_state != ScannerState.IMAGE_LOADED:
-                new_state = ScannerState.IMAGE_LOADED
-            elif scan_result == 0 and self.current_state != ScannerState.IDLE:
-                new_state = ScannerState.IDLE
+                if scan_result == 2 and self.current_state != ScannerState.OPENING:
+                    new_state = ScannerState.OPENING
+                elif scan_result == 1 and self.current_state != ScannerState.IMAGE_LOADED:
+                    new_state = ScannerState.IMAGE_LOADED
+                elif scan_result == 0 and self.current_state != ScannerState.IDLE:
+                    new_state = ScannerState.IDLE
 
-            if new_state is not None:
-                self.current_state = new_state
-                self.state_change_time = time.time()
-                self.signal_state_changed.emit(new_state)
+                if new_state is not None:
+                    self.current_state = new_state
+                    self.state_change_time = time.time()
+                    self.signal_state_changed.emit(new_state)
 
-            time.sleep(0.1)  # Short sleep to prevent high CPU usage
+                # Reset error counter on successful scan
+                consecutive_errors = 0
+                
+                # Adaptive sleep based on current state
+                if self.current_state == ScannerState.IDLE:
+                    time.sleep(0.2)  # Longer sleep when idle
+                else:
+                    time.sleep(0.1)  # Shorter sleep when active
+                    
+            except Exception as e:
+                consecutive_errors += 1
+                print(f"Scanner thread error {consecutive_errors}/{max_errors}: {e}")
+                
+                if consecutive_errors >= max_errors:
+                    print("Too many consecutive errors, stopping scanner thread")
+                    self.scanning = False
+                    break
+                    
+                time.sleep(0.5)  # Longer sleep on error
 
 window = AnimatedWidget()
 # Don't start animation immediately - wait for image detection
@@ -444,4 +505,12 @@ scanner_thread.signal_state_changed.connect(window.handle_state_change)
 # Start the thread
 scanner_thread.start()
 
-app.exec_()
+try:
+    app.exec_()
+finally:
+    # Cleanup on exit
+    print("Shutting down...")
+    scanner_thread.scanning = False
+    scanner_thread.wait(2000)  # Wait up to 2 seconds for thread to finish
+    window.cleanup()
+    cv2.destroyAllWindows()
