@@ -35,6 +35,8 @@ class AnimatedWidget(QWidget):
         self._pause_time = None
         self._animation_in_progress = False
         self._should_reset_timer = True
+        self._last_animation_duration = None
+        self._curtain_direction = input_window.curtain_direction if input_window.curtain_direction is not None else "Left to Right"
 
         # Set the window flags to make the window frameless and always on top
         from PyQt5.QtCore import Qt
@@ -66,16 +68,9 @@ class AnimatedWidget(QWidget):
         self.frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.frame.resize(3840, 1600)
 
-        # Frame to cover the entire screen except for the left 150 pixels
-        self.full_black_main = QFrame(self)
-        self.full_black_main.setGeometry(150, 0, self.screen_width - 150, self.screen_height)
-        self.full_black_main.setStyleSheet('background-color: black;')
-
-        # Frame to cover the top 50 pixels of the left 150 pixels
-        self.full_black_cutout = QFrame(self)
-        self.full_black_cutout.setGeometry(0, 50, 150, self.screen_height - 50)
-        self.full_black_cutout.setStyleSheet('background-color: black;')
-
+        # Create frames for different curtain directions
+        self.create_curtain_frames()
+        
         # Create a QPropertyAnimation instance
         self.animation = QPropertyAnimation(self.frame, b"geometry")
         
@@ -87,12 +82,26 @@ class AnimatedWidget(QWidget):
         self.animation.setDuration(self.animation_duration)
     
         self.initial_geometry = self.frame.geometry()
+        
+        # Connect animation signals
+        self.animation.started.connect(self.onAnimationStarted)
+        self.animation.finished.connect(self.onAnimationFinished)
+        
         # if loop curtain effect is on then connect the animation end signal to restart the animation
         if input_window.loop_curtain_effect == True:
-           self.animation.finished.connect(self.onAnimationFinished) 
-        
-        # Connect animation finished signal to track animation state
-        self.animation.finished.connect(self.onAnimationFinished)
+           self.animation.finished.connect(self.onAnimationFinished)
+
+    def create_curtain_frames(self):
+        """Create the black frames for curtain effect based on direction"""
+        # Frame to cover the entire screen except for the left 150 pixels
+        self.full_black_main = QFrame(self)
+        self.full_black_main.setGeometry(150, 0, self.screen_width - 150, self.screen_height)
+        self.full_black_main.setStyleSheet('background-color: black;')
+
+        # Frame to cover the top 50 pixels of the left 150 pixels
+        self.full_black_cutout = QFrame(self)
+        self.full_black_cutout.setGeometry(0, 50, 150, self.screen_height - 50)
+        self.full_black_cutout.setStyleSheet('background-color: black;')
 
     def onAnimationStarted(self):
         """Called when animation starts"""
@@ -109,7 +118,27 @@ class AnimatedWidget(QWidget):
             self.startAnim()
 
     def startAnim(self):
-        # Handle black screen behavior based on delay_behaviour setting
+        """Start or restart the curtain animation with proper state management"""
+        print(f"startAnim called - current state: {self.current_state}")
+        print(f"Animation in progress: {self._animation_in_progress}")
+        print(f"Should reset timer: {self._should_reset_timer}")
+        print(f"Loop curtain new image: {input_window.loop_curtain_new_image}")
+        
+        # Handle delay behavior first
+        if input_window.delay_behaviour == "Hold last position":
+            print("Using Hold last position behavior")
+            # In hold last position mode, we DON'T reset the animation or start a new one
+            # We just apply the delay and continue with the current position
+            if self.delay > 0:
+                delay_time = self.delay
+                if self.delay_range > 0:
+                    delay_time = self.randDur(self.delay_range, self.delay) / 1000
+                print(f"Holding position for: {delay_time} seconds")
+                time.sleep(delay_time)
+            # Don't start a new animation, just return and keep current position
+            return
+        
+        # Handle other delay behaviors
         if input_window.delay_behaviour == "Black":
             if self.black_toggled:
                 self.toggleBlack()
@@ -117,50 +146,90 @@ class AnimatedWidget(QWidget):
             # Hide black frames to make screen transparent during transition
             if self.black_toggled:
                 self.toggleBlack()
-        elif input_window.delay_behaviour == "Hold last position":
-            # Pause current animation if running and don't show black
-            if self.animation.state() == QAbstractAnimation.State.Running:
-                self.pause()
-                # We'll resume after delay in a separate method
-                if self.delay > 0:
-                    if self.delay_range > 0:
-                        sleep_time = self.randDur(self.delay_range, self.delay)/1000
-                        print(f"Holding position for: {sleep_time}")
-                        time.sleep(sleep_time)
-                    else:
-                        time.sleep(self.delay/1000)
-                self.resume()
-                return
 
-        # Only stop and reset animation if loop_curtain_new_image is enabled
-        # or if this is the first time the animation is starting
-        if input_window.loop_curtain_new_image or self._should_reset_timer:
+        # Apply delay before starting animation
+        if self.delay > 0:
+            delay_time = self.delay
+            if self.delay_range > 0:
+                delay_time = self.randDur(self.delay_range, self.delay) / 1000
+            print(f"Applying delay: {delay_time} seconds")
+            time.sleep(delay_time)
+
+        # Only reset animation and generate new duration under specific conditions
+        should_start_new_animation = False
+        
+        if input_window.loop_curtain_new_image:
+            # If loop on new image is enabled, always start fresh
+            should_start_new_animation = True
+            print("Starting new animation because loop_curtain_new_image is enabled")
+        elif not self._animation_in_progress and self._should_reset_timer:
+            # If no animation is running and we should reset, start new
+            should_start_new_animation = True
+            print("Starting new animation because no animation is running")
+        elif self._animation_in_progress:
+            # If animation is already running, don't interfere
+            print("Animation already running, not starting new one")
+            return
+        
+        if should_start_new_animation:
+            # Stop any existing animation
             self.animation.stop()
             
-            # Only generate new random duration if we should reset the timer
-            if self._should_reset_timer and hasattr(input_window, 'randomness') and input_window.randomness and input_window.randomness > 0:
-                # Determines the random value based off the user input
+            # Generate new random duration only if enabled and conditions are met
+            if (input_window.loop_curtain_new_image or self._should_reset_timer) and \
+               hasattr(input_window, 'randomness') and input_window.randomness and input_window.randomness > 0:
+                # Generate new random duration
                 self.animation_duration = self.randDur(input_window.randomness, input_window.animation_duration)
-                # Applies the random value to the animation
                 self.animation.setDuration(self.animation_duration)
-                print(f"New animation duration: {self.animation_duration}")
-            
-        # Apply delay if configured
-        if self.delay > 0:
-            if self.delay_range > 0:
-                sleep_time = self.randDur(self.delay_range, self.delay)/1000
-                print(f"Sleeping for: {sleep_time}")
-                time.sleep(sleep_time)
+                print(f"Generated new animation duration: {self.animation_duration}ms")
             else:
-                time.sleep(self.delay/1000)
-
-        # Set the start value of the animation to the initial geometry of the widget
-        self.animation.setStartValue(self.initial_geometry)
-
-        # Set the end value of the animation to the desired final geometry of the widget
-        self.animation.setEndValue(QRect(-self.initial_geometry.x(), self.initial_geometry.height(), self.initial_geometry.width(), self.initial_geometry.height()))
-        # Start the animation
-        self.animation.start()
+                # Use last duration or default
+                if self._last_animation_duration:
+                    self.animation.setDuration(self._last_animation_duration)
+                    print(f"Using previous animation duration: {self._last_animation_duration}ms")
+                else:
+                    self.animation.setDuration(self.animation_duration)
+                    print(f"Using default animation duration: {self.animation_duration}ms")
+            
+            # Store the current duration for future use
+            self._last_animation_duration = self.animation.duration()
+            
+            # Set animation geometry based on curtain direction
+            self.setup_animation_geometry()
+            
+            # Start the animation
+            print("Starting curtain animation")
+            self.animation.start()
+        
+    def setup_animation_geometry(self):
+        """Setup start and end geometry based on curtain direction"""
+        direction = self._curtain_direction
+        
+        if direction == "Random Mix":
+            # Randomly choose direction for this iteration
+            import random
+            direction = random.choice(["Left to Right", "Top to Bottom", "Bottom to Top"])
+            print(f"Random direction chosen: {direction}")
+        
+        if direction == "Left to Right":
+            # Original left-to-right animation
+            self.animation.setStartValue(self.initial_geometry)
+            self.animation.setEndValue(QRect(-self.initial_geometry.x(), self.initial_geometry.y(), 
+                                           self.initial_geometry.width(), self.initial_geometry.height()))
+        elif direction == "Top to Bottom":
+            # Top to bottom animation
+            self.animation.setStartValue(QRect(self.initial_geometry.x(), -self.initial_geometry.height(), 
+                                             self.initial_geometry.width(), self.initial_geometry.height()))
+            self.animation.setEndValue(QRect(self.initial_geometry.x(), self.screen_height,
+                                           self.initial_geometry.width(), self.initial_geometry.height()))
+        elif direction == "Bottom to Top":
+            # Bottom to top animation
+            self.animation.setStartValue(QRect(self.initial_geometry.x(), self.screen_height, 
+                                             self.initial_geometry.width(), self.initial_geometry.height()))
+            self.animation.setEndValue(QRect(self.initial_geometry.x(), -self.initial_geometry.height(),
+                                           self.initial_geometry.width(), self.initial_geometry.height()))
+        
+        print(f"Animation geometry set for direction: {direction}")
 
     def charScanner(self):
         mon = {'top': 0, 'left': 0, 'width': 150, 'height': 50}
@@ -214,42 +283,48 @@ class AnimatedWidget(QWidget):
         self.black_toggled = not self.black_toggled
 
     def handle_state_change(self, new_state):
+        """Handle state changes from the scanner thread"""
+        print(f"State change: {self.current_state} -> {new_state}")
+        
         if new_state == ScannerState.OPENING:
+            self.current_state = new_state
             # Handle opening state based on delay behavior
             if input_window.delay_behaviour == "Black":
                 self.toggleBlack()
             elif input_window.delay_behaviour == "Transparent":
                 # Don't show black, keep current state
                 pass
-            # Pause any current animation and hold position
-            if input_window.delay_behaviour == "Hold last position":
-                # Pause any current animation and hold position
-                if self.animation.state() == QAbstractAnimation.State.Running:
-                    self.pause()
+            elif input_window.delay_behaviour == "Hold last position":
+                # In hold last position mode, we don't change anything during opening
+                # The curtain should stay exactly where it is
+                print("Opening detected - holding current position")
+                pass
+                
         elif new_state == ScannerState.IMAGE_LOADED:
-            # Resume from hold position if needed
-            if input_window.delay_behaviour == "Hold last position" and self._is_paused:
-                self.resume()
-            else:
-                self.startAnim()
+            self.current_state = new_state
+            # Start animation when image is loaded
+            self.startAnim()
+            
         elif new_state == ScannerState.IDLE:
+            self.current_state = new_state
             # Handle transition to idle state if needed
             pass
-    # Added pause and resume functions for the animation, to be used later. Hopefully they work...
+    # Added pause and resume functions for the animation (kept for potential future use)
     def pause(self):
-        # This is the only line im not sure if it will work
+        """Pause the current animation"""
         if self.animation.state() == QAbstractAnimation.State.Running:
             self._is_paused = True
             self._pause_value = self.animation.currentValue()
             self._pause_time = self.animation.currentTime()
-            self.animation.stop()
+            self.animation.pause()
+            print("Animation paused")
 
     def resume(self):
-        if self._is_paused and self._pause_value is not None and self._pause_time is not None:
-            self.animation.setStartValue(self._pause_value)
-            self.animation.setCurrentTime(self._pause_time)
-            self.animation.start()
+        """Resume the paused animation"""
+        if self._is_paused:
+            self.animation.resume()
             self._is_paused = False
+            print("Animation resumed")
 
 class ScannerThread(QThread):
     signal_new = pyqtSignal()
@@ -284,7 +359,7 @@ class ScannerThread(QThread):
             time.sleep(0.1)  # Short sleep to prevent high CPU usage
 
 window = AnimatedWidget()
-window.startAnim()
+# Don't start animation immediately - wait for image detection
 window.show()
 
 # Create a thread for the character scanning loop

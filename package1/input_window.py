@@ -19,6 +19,7 @@ class InputWindow(QDialog):
         self.loop_curtain_new_image = None
         self.delay_behaviour = None
         self.random_delay_range = None
+        self.curtain_direction = None
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -44,7 +45,8 @@ class InputWindow(QDialog):
             "Random Delay Range (0-100)",
             "Loop curtain effect",
             "Loop curtain on new image",
-            "Delay Behaviour"
+            "Delay Behaviour",
+            "Curtain Direction"
         ]
 
         inputs = [
@@ -54,7 +56,8 @@ class InputWindow(QDialog):
             self.random_delay_range_input,
             self.loop_checkbox,
             self.new_image_checkbox,
-            None  # Placeholder for radio buttons
+            None,  # Placeholder for delay behaviour radio buttons
+            None   # Placeholder for curtain direction radio buttons
         ]
 
         for i, (label, input_widget) in enumerate(zip(labels, inputs)):
@@ -72,14 +75,25 @@ class InputWindow(QDialog):
             elif i == 6:  # Delay Behaviour radio buttons
                 delay_behaviour_layout = QHBoxLayout()
                 self.delay_behaviour_group = QButtonGroup(self)
-                default_behaviour = "Black"  # Set "Black" as the default selected behaviour
+                default_behaviour = "Hold last position"  # Changed default to Hold last position
                 for behaviour in ["Black", "Transparent", "Hold last position"]:
                     radio = QRadioButton(behaviour)
                     delay_behaviour_layout.addWidget(radio)
                     self.delay_behaviour_group.addButton(radio)
                     if behaviour == default_behaviour:
-                        radio.setChecked(True)  # Set "Black" radio button as default selected
+                        radio.setChecked(True)  # Set "Hold last position" radio button as default selected
                 row_layout.addLayout(delay_behaviour_layout)
+            elif i == 7:  # Curtain Direction radio buttons
+                curtain_direction_layout = QHBoxLayout()
+                self.curtain_direction_group = QButtonGroup(self)
+                default_direction = "Left to Right"  # Set default curtain direction
+                for direction in ["Left to Right", "Top to Bottom", "Bottom to Top", "Random Mix"]:
+                    radio = QRadioButton(direction)
+                    curtain_direction_layout.addWidget(radio)
+                    self.curtain_direction_group.addButton(radio)
+                    if direction == default_direction:
+                        radio.setChecked(True)  # Set "Left to Right" radio button as default selected
+                row_layout.addLayout(curtain_direction_layout)
             
             grid_layout.addWidget(row_widget, i, 0, 1, 2)
 
@@ -192,6 +206,7 @@ class InputWindow(QDialog):
                 self.loop_curtain_effect = self.loop_checkbox.isChecked()
                 self.loop_curtain_new_image = self.new_image_checkbox.isChecked()
                 self.delay_behaviour = self.delay_behaviour_group.checkedButton().text() if self.delay_behaviour_group.checkedButton() else None
+                self.curtain_direction = self.curtain_direction_group.checkedButton().text() if self.curtain_direction_group.checkedButton() else None
                 self.random_delay_range = random_delay_range
                 self.accept()
             else:
@@ -208,7 +223,7 @@ def main():
     if result == QDialog.Accepted:
         return (input_window.animation_duration, input_window.delay, input_window.randomness,
                 input_window.loop_curtain_effect, input_window.loop_curtain_new_image, 
-                input_window.delay_behaviour, input_window.random_delay_range)
+                input_window.delay_behaviour, input_window.random_delay_range, input_window.curtain_direction)
     else:
         print("User closed the window without submitting.")
         return None
@@ -217,7 +232,7 @@ if __name__ == '__main__':
     result = main()
     if result:
         (animation_duration, delay, randomness, loop_curtain_effect, 
-         loop_curtain_new_image, delay_behaviour, random_delay_range) = result
+         loop_curtain_new_image, delay_behaviour, random_delay_range, curtain_direction) = result
         print(f"Animation duration: {animation_duration}")
         print(f"Delay: {delay}")
         print(f"Randomness: {randomness}")
@@ -225,5 +240,6 @@ if __name__ == '__main__':
         print(f"Loop curtain on new image: {loop_curtain_new_image}")
         print(f"Delay Behaviour: {delay_behaviour}")
         print(f"Random Delay Range: {random_delay_range}")
+        print(f"Curtain Direction: {curtain_direction}")
     else:
         print("No data received from the input window.")
