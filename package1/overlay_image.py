@@ -25,6 +25,10 @@ class ScannerState(Enum):
 class AnimatedWidget(QWidget):
     def __init__(self):
         super().__init__()
+        
+        # Validate input_window configuration
+        self.validate_configuration()
+        
         # Defining variables for use later with proper null checking
         self.current_state = ScannerState.IDLE
         self.delay = int(input_window.delay) if input_window.delay is not None else 0
@@ -91,6 +95,29 @@ class AnimatedWidget(QWidget):
         if input_window.loop_curtain_effect == True:
            self.animation.finished.connect(self.onAnimationFinished)
 
+    def validate_configuration(self):
+        """Validate the input window configuration and set defaults if needed"""
+        try:
+            if not hasattr(input_window, 'delay_behaviour') or input_window.delay_behaviour is None:
+                input_window.delay_behaviour = "Hold last position"
+                print("Warning: delay_behaviour not set, defaulting to 'Hold last position'")
+                
+            if not hasattr(input_window, 'curtain_direction') or input_window.curtain_direction is None:
+                input_window.curtain_direction = "Left to Right"
+                print("Warning: curtain_direction not set, defaulting to 'Left to Right'")
+                
+            if not hasattr(input_window, 'loop_curtain_new_image'):
+                input_window.loop_curtain_new_image = True
+                print("Warning: loop_curtain_new_image not set, defaulting to True")
+                
+            print(f"Configuration validated - Delay behaviour: {input_window.delay_behaviour}, Direction: {input_window.curtain_direction}")
+        except Exception as e:
+            print(f"Error validating configuration: {e}")
+            # Set safe defaults
+            input_window.delay_behaviour = "Hold last position"
+            input_window.curtain_direction = "Left to Right"
+            input_window.loop_curtain_new_image = True
+
     def create_curtain_frames(self):
         """Create the black frames for curtain effect based on direction"""
         # Frame to cover the entire screen except for the left 150 pixels
@@ -137,14 +164,15 @@ class AnimatedWidget(QWidget):
                 time.sleep(delay_time)
             # Don't start a new animation, just return and keep current position
             return
-        
-        # Handle other delay behaviors
-        if input_window.delay_behaviour == "Black":
-            if self.black_toggled:
-                self.toggleBlack()
         elif input_window.delay_behaviour == "Transparent":
-            # Hide black frames to make screen transparent during transition
-            if self.black_toggled:
+            print("Using Transparent behavior")
+            # Set transparent mode during transition
+            self.setTransparentMode(True)
+        elif input_window.delay_behaviour == "Black":
+            print("Using Black behavior")
+            # Ensure transparent mode is off and show black overlay
+            self.setTransparentMode(False)
+            if not self.black_toggled:
                 self.toggleBlack()
 
         # Apply delay before starting animation
@@ -207,7 +235,6 @@ class AnimatedWidget(QWidget):
         
         if direction == "Random Mix":
             # Randomly choose direction for this iteration
-            import random
             direction = random.choice(["Left to Right", "Top to Bottom", "Bottom to Top"])
             print(f"Random direction chosen: {direction}")
         
@@ -232,38 +259,48 @@ class AnimatedWidget(QWidget):
         print(f"Animation geometry set for direction: {direction}")
 
     def charScanner(self):
-        mon = {'top': 0, 'left': 0, 'width': 150, 'height': 50}
-        self.character_found = None
+        """Scan for specific text patterns in the defined screen region"""
+        try:
+            mon = {'top': 0, 'left': 0, 'width': 150, 'height': 50}
+            self.character_found = None
 
-        # Create a screen capture object
-        with mss.mss() as sct:
-            # Initialize the variable
-            character_found = 0
-            while character_found == 0 and scanner_thread.scanning:  # Check if scanning flag is True
-                # Capture the defined region of the screen
-                im = numpy.asarray(sct.grab(mon))
+            # Create a screen capture object
+            with mss.mss() as sct:
+                # Initialize the variable
+                character_found = 0
+                while character_found == 0 and scanner_thread.scanning:  # Check if scanning flag is True
+                    try:
+                        # Capture the defined region of the screen
+                        im = numpy.asarray(sct.grab(mon))
 
-                # Use pytesseract to convert the image to text
-                text = pytesseract.image_to_string(im)
+                        # Use pytesseract to convert the image to text
+                        text = pytesseract.image_to_string(im)
 
-                # Check if the character '/' is in the text
-                if 'Opening..' in text:
-                    character_found = 2
-                    print("Opening detected")
-                elif '[' and ']' in text:
-                    character_found = 1
-                    print("Image loaded detected")
-                else:
-                    character_found = 0
+                        # Check if the character '/' is in the text
+                        if 'Opening..' in text:
+                            character_found = 2
+                            print("Opening detected")
+                        elif '[' in text and ']' in text:
+                            character_found = 1
+                            print("Image loaded detected")
+                        else:
+                            character_found = 0
 
-                # Display the captured image in a window
-                cv2.imshow('Image', im)
+                        # Display the captured image in a window (optional for debugging)
+                        cv2.imshow('Image', im)
 
-                # If the "q" key is pressed, break the loop and close the window
-                if cv2.waitKey(25) & 0xFF == ord('q'):
-                    cv2.destroyAllWindows()
-                    break
-        return character_found
+                        # If the "q" key is pressed, break the loop and close the window
+                        if cv2.waitKey(25) & 0xFF == ord('q'):
+                            cv2.destroyAllWindows()
+                            break
+                    except Exception as e:
+                        print(f"Error in charScanner loop: {e}")
+                        time.sleep(0.1)  # Small delay on error
+                        
+            return character_found
+        except Exception as e:
+            print(f"Error in charScanner: {e}")
+            return 0
     
     def randDur(self, randomness, orig_bounds):
         random_high = orig_bounds*1000+randomness*1000 
@@ -274,13 +311,34 @@ class AnimatedWidget(QWidget):
         return random_duration
 
     def toggleBlack(self):
+        """Toggle the black overlay frames on/off"""
         if self.black_toggled:
             self.full_black_main.hide()
             self.full_black_cutout.hide()
+            print("Black overlay hidden")
         else:
             self.full_black_main.show()
             self.full_black_cutout.show()
+            print("Black overlay shown")
         self.black_toggled = not self.black_toggled
+    
+    def setTransparentMode(self, transparent=True):
+        """Set the overlay to transparent mode"""
+        if transparent:
+            # Hide all black frames to make everything transparent
+            self.full_black_main.hide()
+            self.full_black_cutout.hide()
+            # Also hide the main curtain frame if needed
+            self.frame.hide()
+            self.black_toggled = False
+            print("Transparent mode enabled")
+        else:
+            # Show the appropriate frames based on current state
+            if not self.black_toggled:
+                self.full_black_main.show()
+                self.full_black_cutout.show()
+            self.frame.show()
+            print("Transparent mode disabled")
 
     def handle_state_change(self, new_state):
         """Handle state changes from the scanner thread"""
@@ -290,10 +348,11 @@ class AnimatedWidget(QWidget):
             self.current_state = new_state
             # Handle opening state based on delay behavior
             if input_window.delay_behaviour == "Black":
-                self.toggleBlack()
+                if not self.black_toggled:
+                    self.toggleBlack()
             elif input_window.delay_behaviour == "Transparent":
-                # Don't show black, keep current state
-                pass
+                # Enable transparent mode during opening
+                self.setTransparentMode(True)
             elif input_window.delay_behaviour == "Hold last position":
                 # In hold last position mode, we don't change anything during opening
                 # The curtain should stay exactly where it is
@@ -302,6 +361,9 @@ class AnimatedWidget(QWidget):
                 
         elif new_state == ScannerState.IMAGE_LOADED:
             self.current_state = new_state
+            # Disable transparent mode if it was enabled
+            if input_window.delay_behaviour == "Transparent":
+                self.setTransparentMode(False)
             # Start animation when image is loaded
             self.startAnim()
             
@@ -325,6 +387,19 @@ class AnimatedWidget(QWidget):
             self.animation.resume()
             self._is_paused = False
             print("Animation resumed")
+            
+    def test_animation(self):
+        """Test method to manually trigger animation for debugging"""
+        print("Testing animation manually")
+        self.startAnim()
+        
+    def reset_to_initial_position(self):
+        """Reset the curtain to its initial position"""
+        self.animation.stop()
+        self.frame.setGeometry(self.initial_geometry)
+        self._animation_in_progress = False
+        self._should_reset_timer = True
+        print("Curtain reset to initial position")
 
 class ScannerThread(QThread):
     signal_new = pyqtSignal()
